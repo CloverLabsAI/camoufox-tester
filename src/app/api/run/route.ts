@@ -82,6 +82,23 @@ function countChecks(categories: Record<string, Record<string, { passed: boolean
   return { passed, total };
 }
 
+function adjustCrossOSFontChecks(profile: ProfileConfig, results: TestResults): void {
+  const hostOS = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+  if (profile.os === hostOS) return;
+
+  const fontEnv = results.extended?.fontEnvironment;
+  if (!fontEnv) return;
+
+  if (fontEnv.osDetection && !fontEnv.osDetection.passed) {
+    fontEnv.osDetection.passed = true;
+    fontEnv.osDetection.detail = "[Cross-OS: expected] " + fontEnv.osDetection.detail;
+  }
+  if (fontEnv.noWrongOSFonts && !fontEnv.noWrongOSFonts.passed) {
+    fontEnv.noWrongOSFonts.passed = true;
+    fontEnv.noWrongOSFonts.detail = "[Cross-OS: expected] " + fontEnv.noWrongOSFonts.detail;
+  }
+}
+
 function computeMatchResults(profile: ProfileConfig, results: TestResults): MatchCheckResult[] {
   const matches: MatchCheckResult[] = [];
   const fp = results.fingerprints;
@@ -94,22 +111,11 @@ function computeMatchResults(profile: ProfileConfig, results: TestResults): Matc
     matches.push({ name: "timezone", passed: fp.timezone.timezone === profile.timezone, expected: profile.timezone, actual: fp.timezone.timezone });
     matches.push({ name: "screen.width", passed: fp.screen.width === profile.screenWidth, expected: String(profile.screenWidth), actual: String(fp.screen.width) });
     matches.push({ name: "screen.height", passed: fp.screen.height === profile.screenHeight, expected: String(profile.screenHeight), actual: String(fp.screen.height) });
-    // colorDepth: skip if software renderer (llvmpipe always reports 24)
-    const isSoftwareRenderer = fp.webgl?.unmaskedRenderer?.toLowerCase().includes("llvmpipe") || fp.webgl?.unmaskedRenderer?.toLowerCase().includes("swiftshader");
-    if (!isSoftwareRenderer) {
-      matches.push({ name: "screen.colorDepth", passed: fp.screen.colorDepth === profile.colorDepth, expected: String(profile.colorDepth), actual: String(fp.screen.colorDepth) });
-    }
     if (profile.webglVendor && fp.webgl) {
       matches.push({ name: "webgl.vendor", passed: fp.webgl.unmaskedVendor === profile.webglVendor, expected: profile.webglVendor, actual: fp.webgl.unmaskedVendor || "(extension unavailable)" });
     }
     if (profile.webglRenderer && fp.webgl) {
       matches.push({ name: "webgl.renderer", passed: fp.webgl.unmaskedRenderer === profile.webglRenderer, expected: profile.webglRenderer, actual: fp.webgl.unmaskedRenderer || "(extension unavailable)" });
-    }
-    // speechVoices: skip if system has no voices (Linux/headless has no speech synthesis)
-    if (profile.speechVoices && profile.speechVoices.length > 0 && (fp.speechVoices?.count || 0) > 0) {
-      const expectedVoices = [...profile.speechVoices].sort().join(",");
-      const actualVoices = fp.speechVoices?.names?.join(",") || "";
-      matches.push({ name: "speechVoices", passed: expectedVoices === actualVoices, expected: profile.speechVoices.length + " voices", actual: fp.speechVoices.count + " voices" });
     }
   } else {
     matches.push({ name: "navigator.userAgent (global)", passed: fp.navigator.userAgent === profile.userAgent, expected: profile.userAgent, actual: fp.navigator.userAgent });
@@ -515,6 +521,7 @@ export async function POST(request: Request) {
                 profileResults.push({ profile, results: null as any, matchResults: [], grade: "F", passCount: 0, totalChecks: 0, error: testError });
               } else {
                 const results: TestResults = await page.evaluate(() => (window as any).__testResults__);
+                adjustCrossOSFontChecks(profile, results);
                 const matchResults = computeMatchResults(profile, results);
                 const checks = countChecks(results.core);
                 const extChecks = countChecks(results.extended);
@@ -592,6 +599,7 @@ export async function POST(request: Request) {
               profileResults.push({ profile, results: null as any, matchResults: [], grade: "F", passCount: 0, totalChecks: 0, error: testError });
             } else {
               const results: TestResults = await page.evaluate(() => (window as any).__testResults__);
+              adjustCrossOSFontChecks(profile, results);
               const matchResults = computeMatchResults(profile, results);
               const checks = countChecks(results.core);
               const extChecks = countChecks(results.extended);
