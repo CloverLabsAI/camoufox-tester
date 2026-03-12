@@ -34,7 +34,16 @@ interface DrawCertificateOptions {
   crossProfile?: CrossProfileAnalysis;
 }
 
-export function drawCertificate(canvas: HTMLCanvasElement, opts: DrawCertificateOptions) {
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+export async function drawCertificate(canvas: HTMLCanvasElement, opts: DrawCertificateOptions) {
   const { certificate, crossProfile } = opts;
   const W = 1200, H = 820;
   canvas.width = W * 2;
@@ -90,15 +99,23 @@ export function drawCertificate(canvas: HTMLCanvasElement, opts: DrawCertificate
   // Header
   const passed = certificate.overallPass;
 
-  // Logo icon
-  ctx.fillStyle = "#22d3ee";
-  ctx.font = "bold 36px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("C", W / 2, 55);
+  // Logo
+  try {
+    const logo = await loadImage("/camoufox-logo.svg");
+    const logoSize = 48;
+    ctx.drawImage(logo, W / 2 - logoSize / 2, 15, logoSize, logoSize);
+  } catch {
+    // Fallback text if image fails
+    ctx.fillStyle = "#22d3ee";
+    ctx.font = "bold 36px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("C", W / 2, 55);
+  }
 
   // Title
   ctx.font = "bold 28px monospace";
   ctx.fillStyle = "#e0daf0";
+  ctx.textAlign = "center";
   ctx.fillText("CAMOUFOX BUILD CERTIFICATE", W / 2, 95);
 
   // Decorative line
