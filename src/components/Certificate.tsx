@@ -118,7 +118,7 @@ export function Certificate({ results }: CertificateProps) {
     drawCertificate(canvasRef.current, {
       certificate,
       crossProfile: results.crossProfile,
-    });
+    }).catch(() => {});
   }, [certificate, results.crossProfile]);
 
   const handleDownload = useCallback(() => {

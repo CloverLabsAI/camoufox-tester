@@ -23,7 +23,7 @@ export default function RootLayout({
         <header className="border-b border-[rgba(139,127,166,0.15)] bg-[#0d0919]/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="https://camoufox.com/static/logodark.svg" alt="Camoufox" className="h-8 w-auto" />
+              <img src="/camoufox-logo.svg" alt="Camoufox" className="h-8 w-auto" />
               <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-teal-400 text-lg">
                 Camoufox Tester
               </span>
