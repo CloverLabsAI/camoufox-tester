@@ -40,7 +40,9 @@ export async function runAllChecks(
   if (fingerprints.audio.hash !== fingerprints2.audio.hash) diffs.push("audio");
   if (fingerprints.fonts.hash !== fingerprints2.fonts.hash) diffs.push("fonts");
   if (fingerprints.clientRects.hash !== fingerprints2.clientRects.hash) diffs.push("clientRects");
-  if (fingerprints.speechVoices.hash !== fingerprints2.speechVoices.hash) diffs.push("speechVoices");
+  // Only compare speechVoices if both collections returned voices.
+  if (fingerprints.speechVoices.count > 0 && fingerprints2.speechVoices.count > 0 &&
+      fingerprints.speechVoices.hash !== fingerprints2.speechVoices.hash) diffs.push("speechVoices");
   const stable = diffs.length === 0;
   const detail = stable
     ? "All fingerprints stable across two collections"
