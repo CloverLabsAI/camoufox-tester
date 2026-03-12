@@ -30,7 +30,8 @@ export async function POST(request: Request) {
 
   let command: string;
   if (platform === "darwin") {
-    command = `osascript -e 'POSIX path of (choose file with prompt "Select Camoufox binary" of type {"public.unix-executable", "public.data"})'`;
+    // Allow selecting .app bundles or raw executables
+    command = `osascript -e 'set f to POSIX path of (choose file with prompt "Select Camoufox.app or binary" of type {"com.apple.application-bundle", "public.unix-executable", "public.data"})' -e 'return f'`;
   } else if (platform === "win32") {
     let initialDir = "";
     if (isLinuxOnWindows) {
@@ -63,7 +64,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ path: null, cancelled: true });
     }
 
-    return NextResponse.json({ path, cancelled: false });
+    // On macOS, auto-resolve .app bundle to the binary inside
+    let resolvedPath = path;
+    if (resolvedPath.endsWith(".app") || resolvedPath.endsWith(".app/")) {
+      resolvedPath = resolvedPath.replace(/\/$/, "") + "/Contents/MacOS/camoufox";
+    }
+
+    return NextResponse.json({ path: resolvedPath, cancelled: false });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to open file dialog", path: null },

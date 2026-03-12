@@ -4,11 +4,19 @@ import { useState, useCallback } from "react";
 import { TestRunner } from "@/components/TestRunner";
 import type { FullTestResult } from "@/lib/types";
 
-type BuildPlatform = "auto" | "windows" | "linux" | "macos";
+type BuildPlatform = "windows" | "linux" | "macos";
+
+function detectPlatform(): BuildPlatform {
+  if (typeof navigator === "undefined") return "linux";
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes("mac")) return "macos";
+  if (ua.includes("win")) return "windows";
+  return "linux";
+}
 
 export default function Home() {
   const [binaryPath, setBinaryPath] = useState("");
-  const [buildPlatform, setBuildPlatform] = useState<BuildPlatform>("auto");
+  const [buildPlatform, setBuildPlatform] = useState<BuildPlatform>(detectPlatform);
   const [testState, setTestState] = useState<"idle" | "running" | "complete">("idle");
   const [results, setResults] = useState<FullTestResult | null>(null);
   const [browsing, setBrowsing] = useState(false);
@@ -74,11 +82,10 @@ export default function Home() {
             </p>
             <div className="flex gap-2">
               {([
-                { value: "auto", label: "Auto-detect" },
-                { value: "linux", label: "Linux" },
-                { value: "macos", label: "macOS" },
-                { value: "windows", label: "Windows" },
-              ] as const).map(({ value, label }) => (
+                { value: "linux" as const, label: "Linux" },
+                { value: "macos" as const, label: "macOS" },
+                { value: "windows" as const, label: "Windows" },
+              ]).map(({ value, label }) => (
                 <button
                   key={value}
                   onClick={() => setBuildPlatform(value)}
@@ -100,8 +107,8 @@ export default function Home() {
               Camoufox Binary Path
             </label>
             <p className="text-xs text-[#8b7fa6]">
-              {buildPlatform === "linux"
-                ? "Browse will open in your WSL filesystem if on Windows"
+              {buildPlatform === "macos"
+                ? "Select the Camoufox.app bundle or the binary inside it"
                 : "Select your built Camoufox browser executable"}
             </p>
             <div className="flex gap-2">
@@ -110,11 +117,11 @@ export default function Home() {
                 value={binaryPath}
                 onChange={(e) => setBinaryPath(e.target.value)}
                 placeholder={
-                  buildPlatform === "linux"
-                    ? "\\\\wsl$\\Ubuntu\\home\\user\\camoufox\\camoufox"
-                    : buildPlatform === "macos"
-                      ? "/Applications/Camoufox.app/Contents/MacOS/camoufox"
-                      : "/path/to/camoufox"
+                  buildPlatform === "macos"
+                    ? "~/Downloads/Camoufox.app"
+                    : buildPlatform === "linux"
+                      ? "/home/user/camoufox/camoufox"
+                      : "C:\\path\\to\\camoufox.exe"
                 }
                 className="flex-1 bg-[#0d0919] border border-[rgba(139,127,166,0.2)] rounded-lg px-4 py-2.5 text-sm text-[#e0daf0] placeholder:text-[#8b7fa6]/50 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 font-mono"
               />
