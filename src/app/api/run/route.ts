@@ -565,7 +565,67 @@ export async function POST(request: Request) {
             sendSSE(controller, "profile-complete", { type: "profile-complete", profileIndex: entryIndex, result: profileResults[profileResults.length - 1] });
           }
 
-          // Phase 4: Close all contexts
+          // Phase 4: Cross-context re-verification — wait 5s, re-collect key values, compare
+          if (openContexts.length > 1) {
+            sendSSE(controller, "progress", {
+              type: "progress",
+              profileIndex: 0,
+              profileName: "Re-verifying all contexts after 5 seconds...",
+              phase: "testing",
+              total: totalProfiles,
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Lightweight re-collection of key fingerprint values from each still-open page
+            const reVerifyScript = `(() => ({
+              platform: navigator.platform,
+              oscpu: navigator.oscpu || "",
+              hardwareConcurrency: navigator.hardwareConcurrency || 0,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              screenWidth: screen.width,
+              screenHeight: screen.height,
+              colorDepth: screen.colorDepth,
+            }))()`;
+
+            for (let i = 0; i < openContexts.length; i++) {
+              const { page, profile } = openContexts[i];
+              const profileResult = profileResults.find(r => r.profile === profile);
+              if (!profileResult || !profileResult.results) continue;
+
+              try {
+                const recheck = await page.evaluate(reVerifyScript) as {
+                  platform: string; oscpu: string; hardwareConcurrency: number;
+                  timezone: string; screenWidth: number; screenHeight: number; colorDepth: number;
+                };
+
+                const original = profileResult.results.fingerprints;
+                const drifted: string[] = [];
+
+                if (recheck.platform !== original.navigator.platform) drifted.push(`platform: ${original.navigator.platform} -> ${recheck.platform}`);
+                if (recheck.oscpu !== original.navigator.oscpu) drifted.push(`oscpu: ${original.navigator.oscpu} -> ${recheck.oscpu}`);
+                if (recheck.hardwareConcurrency !== original.navigator.hardwareConcurrency) drifted.push(`hwc: ${original.navigator.hardwareConcurrency} -> ${recheck.hardwareConcurrency}`);
+                if (recheck.timezone !== original.timezone.timezone) drifted.push(`timezone: ${original.timezone.timezone} -> ${recheck.timezone}`);
+                if (recheck.screenWidth !== original.screen.width) drifted.push(`screenWidth: ${original.screen.width} -> ${recheck.screenWidth}`);
+                if (recheck.screenHeight !== original.screen.height) drifted.push(`screenHeight: ${original.screen.height} -> ${recheck.screenHeight}`);
+
+                if (drifted.length > 0) {
+                  // Cross-context contamination detected — update stability to FAIL
+                  profileResult.results.stability.stable = false;
+                  profileResult.results.stability.detail = `Cross-context drift after 5s: ${drifted.join(", ")}`;
+                  // Recompute score (stability was already counted as pass, flip it to fail)
+                  profileResult.passCount--;
+                  profileResult.grade = computeGrade(profileResult.passCount, profileResult.totalChecks);
+
+                  // Re-emit the updated profile result
+                  const entryIndex = perContextEntries.findIndex(e => e.profile === profile);
+                  sendSSE(controller, "profile-complete", { type: "profile-complete", profileIndex: entryIndex, result: profileResult });
+                }
+              } catch {}
+            }
+          }
+
+          // Phase 5: Close all contexts
           for (const { context } of openContexts) {
             await context.close().catch(() => {});
           }
