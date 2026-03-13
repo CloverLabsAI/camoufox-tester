@@ -450,7 +450,7 @@ export async function POST(request: Request) {
 
         const totalProfiles = perContextEntries.length + globalEntries.length;
 
-        // Step 2: Per-context profiles (one browser, multiple contexts, no CAMOU_CONFIG)
+        // Step 2: Per-context profiles — all contexts open simultaneously to catch cross-contamination
         if (perContextEntries.length > 0) {
           sendSSE(controller, "progress", {
             type: "progress",
@@ -484,19 +484,20 @@ export async function POST(request: Request) {
             return;
           }
 
+          // Phase 1: Create ALL contexts simultaneously (don't close any)
+          const openContexts: { context: any; page: any; preset: typeof perContextEntries[0]["preset"]; profile: typeof perContextEntries[0]["profile"] }[] = [];
+
+          sendSSE(controller, "progress", {
+            type: "progress",
+            profileIndex: 0,
+            profileName: "Creating all per-context profiles simultaneously...",
+            phase: "testing",
+            total: totalProfiles,
+          });
+
           for (let i = 0; i < perContextEntries.length; i++) {
             const { preset, profile } = perContextEntries[i];
-
-            sendSSE(controller, "progress", {
-              type: "progress",
-              profileIndex: i,
-              profileName: profile.name,
-              phase: "testing",
-              total: totalProfiles,
-            });
-
             try {
-              // Build Playwright context options from the preset
               const ctxOptions: Record<string, unknown> = {};
               const vp = preset.contextOptions.viewport;
               ctxOptions.viewport = vp
@@ -508,14 +509,38 @@ export async function POST(request: Request) {
               if (preset.contextOptions.timezoneId) ctxOptions.timezoneId = preset.contextOptions.timezoneId;
 
               const context = await browser.newContext(ctxOptions);
-
-              // Apply the Python-generated init script (calls all window.setXxx functions)
               await context.addInitScript(preset.initScript);
-
               const page = await context.newPage();
-              await page.goto(testPageUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-              await page.waitForFunction("!!window.__testComplete__", { timeout: 120000 });
 
+              openContexts.push({ context, page, preset, profile });
+            } catch (err: any) {
+              profileResults.push({ profile, results: null as any, matchResults: [], grade: "F", passCount: 0, totalChecks: 0, error: err.message });
+              sendSSE(controller, "profile-complete", { type: "profile-complete", profileIndex: i, result: profileResults[profileResults.length - 1] });
+            }
+          }
+
+          // Phase 2: Navigate all pages and run tests concurrently (all contexts alive)
+          await Promise.all(openContexts.map(({ page }) =>
+            page.goto(testPageUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {})
+          ));
+          await Promise.all(openContexts.map(({ page }) =>
+            page.waitForFunction("!!window.__testComplete__", { timeout: 120000 }).catch(() => {})
+          ));
+
+          // Phase 3: Collect results from all contexts (still all open)
+          for (let i = 0; i < openContexts.length; i++) {
+            const { page, profile } = openContexts[i];
+            const entryIndex = perContextEntries.findIndex(e => e.profile === profile);
+
+            sendSSE(controller, "progress", {
+              type: "progress",
+              profileIndex: entryIndex,
+              profileName: profile.name,
+              phase: "testing",
+              total: totalProfiles,
+            });
+
+            try {
               const testError = await page.evaluate(() => (window as any).__testError__);
               if (testError) {
                 profileResults.push({ profile, results: null as any, matchResults: [], grade: "F", passCount: 0, totalChecks: 0, error: testError });
@@ -533,15 +558,17 @@ export async function POST(request: Request) {
                 for (const m of matchResults) { totalChecks++; if (m.passed) passCount++; }
                 profileResults.push({ profile, results, matchResults, grade: computeGrade(passCount, totalChecks), passCount, totalChecks });
               }
-
-              await context.close();
             } catch (err: any) {
               profileResults.push({ profile, results: null as any, matchResults: [], grade: "F", passCount: 0, totalChecks: 0, error: err.message });
             }
 
-            sendSSE(controller, "profile-complete", { type: "profile-complete", profileIndex: i, result: profileResults[profileResults.length - 1] });
+            sendSSE(controller, "profile-complete", { type: "profile-complete", profileIndex: entryIndex, result: profileResults[profileResults.length - 1] });
           }
 
+          // Phase 4: Close all contexts
+          for (const { context } of openContexts) {
+            await context.close().catch(() => {});
+          }
           await browser.close();
         }
 
